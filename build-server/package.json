@@ -1,0 +1,16 @@
+{
+  "name": "build-server",
+  "version": "1.0.0",
+  "description": "Build server for the Deployment Pipeline Platform, responsible for building Docker Image.",
+  "main": "script.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "jest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
