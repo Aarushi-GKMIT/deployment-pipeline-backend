@@ -3,6 +3,7 @@
 ## Folder Structure
 
 ```
+<<<<<<< Updated upstream
 deployment-pipeline-platform-backend/
 ├── api-server/            
 │   ├── src/                
@@ -29,6 +30,50 @@ deployment-pipeline-platform-backend/
 │
 ├── package.json             
 └── README.md
+=======
+Directory structure:
+└── deployment-pipeline-platform-backend/
+    ├── README.md
+    ├── api-server/
+    │   ├── controllers/
+    │   │   └── authController.js
+    │   ├── index.js
+    │   ├── middleware/
+    │   │   └── auth.middleware.js
+    │   ├── package-lock.json
+    │   ├── package.json
+    │   ├── prisma/
+    │   │   ├── migrations/
+
+    │   │   ├── models/
+    │   │   │   ├── deployment.prisma
+    │   │   │   ├── project.prisma
+    │   │   │   └── user.prisma
+    │   │   ├── schema.prisma
+    │   │   └── seeders/
+
+    │   ├── routes/
+    │   │   ├── deploy.js
+    │   │   ├── login.js
+    │   │   ├── project.js
+    │   │   └── signup.js
+    │   ├── services/
+    │   │   └── authService.js
+    │   ├── test/
+    │   │   └── sample.test.js
+    │   ├── utils/
+    │   │   └── authUtil.js
+    │   └── views/
+    │       └── login.js
+    ├── build-server/
+    │   ├── Dockerfile
+    │   ├── script.js
+    │   └── test/
+
+    └── s3-proxy-server/
+        ├── index.js
+        └── test/
+>>>>>>> Stashed changes
 ```
 
 ##  Setup
