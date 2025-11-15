@@ -22,4 +22,9 @@ proxy.on("proxyReq", (proxyReq, req, res) => {
     if (url === "/") proxyReq.path += "index.html";
 });
 
-app.listen(PORT, () => console.log(`Reverse Proxy Running..${PORT}`));
+module.exports = app;
+
+// Start server only if this file is run directly
+if (require.main === module) {
+    app.listen(PORT, () => console.log(`Reverse Proxy Running..${PORT}`));
+}
