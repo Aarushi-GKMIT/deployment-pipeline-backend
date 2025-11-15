@@ -1,14 +1,24 @@
+const { exec } = require("child_process");
+const fs = require("fs");
+const path = require("path");
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const mime = require("mime-types");
 
-// Mock dependencies
+// Mock all dependencies
+jest.mock("child_process");
+jest.mock("fs");
 jest.mock("@aws-sdk/client-s3");
 jest.mock("mime-types");
 jest.mock("dotenv", () => ({
   config: jest.fn(),
 }));
 
-describe("Build Server Script - Unit Tests", () => {
+describe("Build Server Script - Integration Tests", () => {
+  let mockS3Send;
+  let consoleLogSpy;
+  let consoleErrorSpy;
+  let processExitSpy;
+
   beforeAll(() => {
     // Setup environment variables
     process.env.PROJECT_ID = "test-project-123";
@@ -20,154 +30,311 @@ describe("Build Server Script - Unit Tests", () => {
   });
 
   beforeEach(() => {
+    // Mock S3Client
+    mockS3Send = jest.fn().mockResolvedValue({});
+    S3Client.mockImplementation(() => ({
+      send: mockS3Send,
+    }));
+
+    // Mock console
+    consoleLogSpy = jest.spyOn(console, "log").mockImplementation();
+    consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
+    
+    // Mock process.exit to prevent test termination
+    processExitSpy = jest.spyOn(process, "exit").mockImplementation();
+
     jest.clearAllMocks();
   });
 
-  describe("Module Loading", () => {
-    test("should load module without errors", () => {
-      expect(() => require("../script")).not.toThrow();
-    });
-
-    test("should export init function", () => {
-      const script = require("../script");
-      expect(script.init).toBeDefined();
-      expect(typeof script.init).toBe("function");
-    });
+  afterEach(() => {
+    consoleLogSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
+    processExitSpy.mockRestore();
   });
 
-
-
-  describe("Environment Variables", () => {
-    test("should read PROJECT_ID from environment", () => {
-      expect(process.env.PROJECT_ID).toBe("test-project-123");
-    });
-
-    test("should read GIT_REPOSITORY_URL from environment", () => {
-      expect(process.env.GIT_REPOSITORY_URL).toBe("https://github.com/test/repo.git");
-    });
-
-    test("should read AWS_REGION from environment", () => {
-      expect(process.env.AWS_REGION).toBe("us-east-1");
-    });
-
-    test("should read S3_BUCKET from environment", () => {
-      expect(process.env.S3_BUCKET).toBe("test-bucket");
-    });
-  });
-
-  describe("S3 Upload Key Format", () => {
-    test("should generate correct S3 key format", () => {
-      const projectId = "test-project-123";
-      const fileName = "index.html";
-      const expectedKey = `__outputs/${projectId}/${fileName}`;
+  describe("Git Clone Operation", () => {
+    test("should handle git clone failure", (done) => {
+      const cloneError = new Error("Git clone failed");
       
-      expect(expectedKey).toBe("__outputs/test-project-123/index.html");
-    });
+      exec.mockImplementation((cmd, callback) => {
+        process.nextTick(() => callback(cloneError));
+        return { stdout: { on: jest.fn() }, stderr: { on: jest.fn() }, on: jest.fn() };
+      });
 
-    test("should handle nested file paths", () => {
-      const projectId = "test-project-123";
-      const fileName = "assets/css/style.css";
-      const expectedKey = `__outputs/${projectId}/${fileName}`;
+      const { init } = require("../script");
       
-      expect(expectedKey).toBe("__outputs/test-project-123/assets/css/style.css");
+      init().catch((err) => {
+        expect(err).toBe(cloneError);
+        expect(consoleLogSpy).toHaveBeenCalledWith("Starting Build Server...");
+        expect(consoleLogSpy).toHaveBeenCalledWith("Cloning repository...");
+        done();
+      });
     });
 
-    test("should include __outputs prefix", () => {
-      const key = `__outputs/${process.env.PROJECT_ID}/file.js`;
-      expect(key).toMatch(/^__outputs\//);
+    test("should use correct git repository URL", (done) => {
+      exec.mockImplementation((cmd, callback) => {
+        expect(cmd).toContain(process.env.GIT_REPOSITORY_URL);
+        process.nextTick(() => callback(null));
+        return { stdout: { on: jest.fn() }, stderr: { on: jest.fn() }, on: jest.fn() };
+      });
+
+      const { init } = require("../script");
+      init().catch(() => {});
+
+      setTimeout(() => {
+        expect(exec).toHaveBeenCalled();
+        done();
+      }, 100);
     });
   });
 
-  describe("PutObjectCommand", () => {
-    test("should create command with all required fields", () => {
-      new PutObjectCommand({
-        Bucket: "test-bucket",
-        Key: "__outputs/test-project-123/index.html",
-        Body: "mock-stream",
-        ContentType: "text/html",
+  describe("Build Operation", () => {
+    test("should run npm install and build", (done) => {
+      let buildProcessCreated = false;
+
+      exec.mockImplementation((cmd, callback) => {
+        if (callback) {
+          // Git clone
+          process.nextTick(() => callback(null));
+          return { stdout: { on: jest.fn() }, stderr: { on: jest.fn() }, on: jest.fn() };
+        } else {
+          // Build process
+          buildProcessCreated = true;
+          return {
+            stdout: { on: jest.fn() },
+            stderr: { on: jest.fn() },
+            on: jest.fn((event, cb) => {
+              if (event === "close") {
+                process.nextTick(() => cb(0));
+              }
+            }),
+          };
+        }
       });
 
-      expect(PutObjectCommand).toHaveBeenCalledWith({
-        Bucket: "test-bucket",
-        Key: "__outputs/test-project-123/index.html",
-        Body: "mock-stream",
-        ContentType: "text/html",
-      });
+      fs.readdirSync.mockReturnValue([]);
+
+      const { init } = require("../script");
+      init().catch(() => {});
+
+      setTimeout(() => {
+        expect(buildProcessCreated).toBe(true);
+        expect(consoleLogSpy).toHaveBeenCalledWith("Installing dependencies and building...");
+        done();
+      }, 150);
     });
 
-    test("should use correct bucket from environment", () => {
-      new PutObjectCommand({
-        Bucket: process.env.S3_BUCKET,
-        Key: "__outputs/test/file.html",
-        Body: "stream",
-        ContentType: "text/html",
+    test("should log build stdout output", (done) => {
+      const buildOutput = "npm install successful";
+
+      exec.mockImplementation((cmd, callback) => {
+        if (callback) {
+          process.nextTick(() => callback(null));
+          return { stdout: { on: jest.fn() }, stderr: { on: jest.fn() }, on: jest.fn() };
+        } else {
+          return {
+            stdout: {
+              on: jest.fn((event, cb) => {
+                if (event === "data") {
+                  process.nextTick(() => cb(buildOutput));
+                }
+              }),
+            },
+            stderr: { on: jest.fn() },
+            on: jest.fn((event, cb) => {
+              if (event === "close") {
+                process.nextTick(() => cb(0));
+              }
+            }),
+          };
+        }
       });
 
-      expect(PutObjectCommand).toHaveBeenCalledWith(
-        expect.objectContaining({
+      fs.readdirSync.mockReturnValue([]);
+
+      const { init } = require("../script");
+      init().catch(() => {});
+
+      setTimeout(() => {
+        expect(consoleLogSpy).toHaveBeenCalledWith(buildOutput);
+        done();
+      }, 150);
+    });
+
+    test("should log build stderr errors", (done) => {
+      const errorOutput = "Build warning";
+
+      exec.mockImplementation((cmd, callback) => {
+        if (callback) {
+          process.nextTick(() => callback(null));
+          return { stdout: { on: jest.fn() }, stderr: { on: jest.fn() }, on: jest.fn() };
+        } else {
+          return {
+            stdout: { on: jest.fn() },
+            stderr: {
+              on: jest.fn((event, cb) => {
+                if (event === "data") {
+                  process.nextTick(() => cb(errorOutput));
+                }
+              }),
+            },
+            on: jest.fn((event, cb) => {
+              if (event === "close") {
+                process.nextTick(() => cb(0));
+              }
+            }),
+          };
+        }
+      });
+
+      fs.readdirSync.mockReturnValue([]);
+
+      const { init } = require("../script");
+      init().catch(() => {});
+
+      setTimeout(() => {
+        expect(consoleErrorSpy).toHaveBeenCalledWith("Error:", errorOutput);
+        done();
+      }, 150);
+    });
+
+    test("should complete build successfully", (done) => {
+      exec.mockImplementation((cmd, callback) => {
+        if (callback) {
+          process.nextTick(() => callback(null));
+          return { stdout: { on: jest.fn() }, stderr: { on: jest.fn() }, on: jest.fn() };
+        } else {
+          return {
+            stdout: { on: jest.fn() },
+            stderr: { on: jest.fn() },
+            on: jest.fn((event, cb) => {
+              if (event === "close") {
+                process.nextTick(() => cb(0));
+              }
+            }),
+          };
+        }
+      });
+
+      fs.readdirSync.mockReturnValue([]);
+
+      const { init } = require("../script");
+      init().catch(() => {});
+
+      setTimeout(() => {
+        expect(consoleLogSpy).toHaveBeenCalledWith("Build Complete");
+        done();
+      }, 150);
+    });
+  });
+
+  describe("S3 Upload Operation", () => {
+    test("should use correct S3 bucket and key format", (done) => {
+      exec.mockImplementation((cmd, callback) => {
+        if (callback) {
+          process.nextTick(() => callback(null));
+          return { stdout: { on: jest.fn() }, stderr: { on: jest.fn() }, on: jest.fn() };
+        } else {
+          return {
+            stdout: { on: jest.fn() },
+            stderr: { on: jest.fn() },
+            on: jest.fn((event, cb) => {
+              if (event === "close") {
+                process.nextTick(() => cb(0));
+              }
+            }),
+          };
+        }
+      });
+
+      fs.readdirSync.mockReturnValue(["index.html"]);
+      fs.lstatSync.mockReturnValue({ isDirectory: () => false });
+      fs.createReadStream.mockReturnValue("mock-stream");
+      mime.lookup.mockReturnValue("text/html");
+
+      const { init } = require("../script");
+      init().catch(() => {});
+
+      setTimeout(() => {
+        expect(PutObjectCommand).toHaveBeenCalledWith({
           Bucket: "test-bucket",
-        })
-      );
+          Key: "__outputs/test-project-123/index.html",
+          Body: "mock-stream",
+          ContentType: "text/html",
+        });
+        done();
+      }, 200);
     });
 
-    test("should include ContentType in command", () => {
-      new PutObjectCommand({
-        Bucket: "test-bucket",
-        Key: "__outputs/test/style.css",
-        Body: "stream",
-        ContentType: "text/css",
+    test("should set correct ContentType for uploaded files", (done) => {
+      exec.mockImplementation((cmd, callback) => {
+        if (callback) {
+          process.nextTick(() => callback(null));
+          return { stdout: { on: jest.fn() }, stderr: { on: jest.fn() }, on: jest.fn() };
+        } else {
+          return {
+            stdout: { on: jest.fn() },
+            stderr: { on: jest.fn() },
+            on: jest.fn((event, cb) => {
+              if (event === "close") {
+                process.nextTick(() => cb(0));
+              }
+            }),
+          };
+        }
       });
 
-      expect(PutObjectCommand).toHaveBeenCalledWith(
-        expect.objectContaining({
-          ContentType: "text/css",
-        })
-      );
-    });
-  });
-
-  describe("MIME Type Detection", () => {
-    beforeEach(() => {
-      mime.lookup.mockImplementation((filePath) => {
-        if (filePath.endsWith(".html")) return "text/html";
-        if (filePath.endsWith(".css")) return "text/css";
-        if (filePath.endsWith(".js")) return "application/javascript";
-        if (filePath.endsWith(".json")) return "application/json";
-        if (filePath.endsWith(".png")) return "image/png";
-        if (filePath.endsWith(".jpg")) return "image/jpeg";
+      fs.readdirSync.mockReturnValue(["style.css"]);
+      fs.lstatSync.mockReturnValue({ isDirectory: () => false });
+      fs.createReadStream.mockReturnValue("mock-stream");
+      mime.lookup.mockImplementation((file) => {
+        if (file.endsWith(".css")) return "text/css";
         return "application/octet-stream";
       });
+
+      const { init } = require("../script");
+      init().catch(() => {});
+
+      setTimeout(() => {
+        expect(PutObjectCommand).toHaveBeenCalledWith(
+          expect.objectContaining({
+            ContentType: "text/css",
+          })
+        );
+        done();
+      }, 200);
     });
 
-    test("should detect HTML MIME type", () => {
-      expect(mime.lookup("index.html")).toBe("text/html");
-    });
+    test("should exit with code 0 after successful upload", (done) => {
+      exec.mockImplementation((cmd, callback) => {
+        if (callback) {
+          process.nextTick(() => callback(null));
+          return { stdout: { on: jest.fn() }, stderr: { on: jest.fn() }, on: jest.fn() };
+        } else {
+          return {
+            stdout: { on: jest.fn() },
+            stderr: { on: jest.fn() },
+            on: jest.fn((event, cb) => {
+              if (event === "close") {
+                process.nextTick(() => cb(0));
+              }
+            }),
+          };
+        }
+      });
 
-    test("should detect CSS MIME type", () => {
-      expect(mime.lookup("style.css")).toBe("text/css");
-    });
+      fs.readdirSync.mockReturnValue(["index.html"]);
+      fs.lstatSync.mockReturnValue({ isDirectory: () => false });
+      fs.createReadStream.mockReturnValue("mock-stream");
+      mime.lookup.mockReturnValue("text/html");
 
-    test("should detect JavaScript MIME type", () => {
-      expect(mime.lookup("app.js")).toBe("application/javascript");
-    });
+      const { init } = require("../script");
+      init().catch(() => {});
 
-    test("should detect JSON MIME type", () => {
-      expect(mime.lookup("data.json")).toBe("application/json");
-    });
-
-    test("should detect PNG image MIME type", () => {
-      expect(mime.lookup("logo.png")).toBe("image/png");
-    });
-
-    test("should detect JPEG image MIME type", () => {
-      expect(mime.lookup("photo.jpg")).toBe("image/jpeg");
-    });
-
-    test("should return default MIME type for unknown files", () => {
-      expect(mime.lookup("file.xyz")).toBe("application/octet-stream");
+      setTimeout(() => {
+        expect(processExitSpy).toHaveBeenCalledWith(0);
+        done();
+      }, 200);
     });
   });
 });
-
-
-
