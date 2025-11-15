@@ -67,5 +67,9 @@ async function init() {
     });
 }
 
-init();
+if (require.main === module) {
+    init();
+}
+
+module.exports = { init };
 
