@@ -1,25 +1,69 @@
+require('dotenv').config();
 const express = require("express");
 const httpProxy = require("http-proxy");
-require('dotenv').config();
 
-const app = express();
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 3000;
+const BASE_PATH = process.env.AWS_S3_BASE_URL || "http://localhost:4566"; 
 
-const BASE_PATH = process.env.AWS_S3_BASE_URL;
-const proxy = httpProxy.createProxy();
 
-app.use((req, res) => {
-    const hostname = req.hostname;
-    const subdomain = hostname.split(".")[0];
+function getSubdomain(hostname) {
+    if (!hostname || typeof hostname !== "string") return null;
 
-    const resolvesTo = `${BASE_PATH}/${subdomain}`;
+    const parts = hostname.split(".");
+    if (parts.length < 2) return null; 
 
-    return proxy.web(req, res, { target: resolvesTo, changeOrigin: true });
-});
+    return parts[0];
+}
 
-proxy.on("proxyReq", (proxyReq, req, res) => {
-    const url = req.url;
-    if (url === "/") proxyReq.path += "index.html";
-});
 
-app.listen(PORT, () => console.log(`Reverse Proxy Running..${PORT}`));
+ // Create Express app with reverse proxy
+ 
+function createApp() {
+    const app = express();
+    const proxy = httpProxy.createProxy();
+
+    // Middleware for proxying requests to S3
+    app.use((req, res) => {
+        try {
+            const subdomain = getSubdomain(req.hostname);
+
+            if (!subdomain) {
+                res.status(400).send("Invalid hostname or subdomain");
+                return;
+            }
+
+            const target = `${BASE_PATH}/${subdomain}`;
+            proxy.web(req, res, { target, changeOrigin: true });
+        } catch (err) {
+            console.error("Proxy error:", err);
+            res.status(500).send("Internal server error");
+        }
+    });
+
+
+    proxy.on("proxyReq", (proxyReq, req) => {
+        if (req.url === "/") {
+            proxyReq.path += "index.html";
+        }
+    });
+
+    return app;
+}
+
+
+// Start the server
+ 
+function startServer() {
+    const app = createApp();
+    app.listen(PORT, () => {
+        console.log(`Reverse Proxy Running on port ${PORT}`);
+    });
+}
+
+// Start the server if this file is run directly
+if (require.main === module) {
+    startServer();
+}
+
+// Export functions for testing
+module.exports = { createApp, startServer, getSubdomain };
