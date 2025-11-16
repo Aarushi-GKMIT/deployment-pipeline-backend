@@ -1,0 +1,20 @@
+model Users {
+  id             String           @id @default(uuid())
+  name           String?
+  email          String           @unique
+  password       String
+
+  roleId         String
+  role           Roles            @relation(fields: [roleId], references: [id])
+
+  projectId      String?
+  project        Projects?        @relation(fields: [projectId], references: [id])
+
+  deployments    Deployments[]
+
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+
+  @@index([email])
+}

@@ -1,0 +1,16 @@
+model Projects {
+  id                String         @id @default(uuid())
+  name              String
+  gitUrl            String         @map("git_url")
+  adminGithubToken  String         @map("admin_github_token")
+  allowedUserId     String[]       @default([])
+
+  users             Users[]
+  deployments       Deployments[]
+
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  deletedAt         DateTime?
+  
+  @@index([gitUrl])
+}
