@@ -8,10 +8,10 @@
   },
   "scripts": {
     "test": "jest",
-    "login": "aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 022005599044.dkr.ecr.ap-south-1.amazonaws.com",
-    "build": "docker build -t builder-server .",
-    "tag": "docker tag builder-server:latest 022005599044.dkr.ecr.ap-south-1.amazonaws.com/builder-server:latest",
-    "push": "docker push 022005599044.dkr.ecr.ap-south-1.amazonaws.com/builder-server:latest"
+    "login": "node ./utils/ecr.js login",
+    "build": "node ./utils/ecr.js build",
+    "tag": "node ./utils/ecr.js tag",
+    "push": "node ./utils/ecr.js push"
   },
   "keywords": [],
   "author": "",
