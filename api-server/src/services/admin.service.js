@@ -50,4 +50,87 @@ const login = async (data) => {
     };
 };
 
-module.exports = { signup, login };
+const getUsers = async (data) => {
+    const { id } = data;
+
+    const admin = await prisma.users.findUnique({
+        where: { id },
+    });
+
+    if (!admin) {
+        throw new ApiError(404, "Admin user not found");
+    }
+
+    if (!admin.projectId) {
+        throw new ApiError(403, "Admin has no project assigned");
+    }
+
+    const projectUsers = await prisma.users.findMany({
+        where: {
+            projectId: admin.projectId,
+            NOT: { id }, // exclude admin
+        },
+        select: {
+            id: true,
+            name: true,
+            email: true,
+        },
+    });
+
+    return projectUsers;
+};
+
+const permissionsUpdate = async (data) => {
+    const { adminId, userId, canDeploy } = data;
+
+    const user = await prisma.users.findUnique({
+        where: { id: userId },
+        select: { projectId: true },
+    });
+
+    if (!user) throw new ApiError(404, "User not found");
+
+    const admin = await prisma.users.findUnique({
+        where: { id: adminId },
+        select: { projectId: true },
+    });
+
+    if (!admin) throw new ApiError(404, "Admin not found");
+
+    if (admin.projectId !== user.projectId) {
+        throw new ApiError(403, "Admin and user are not in the same project");
+    }
+
+    const project = await prisma.projects.findUnique({
+        where: { id: user.projectId },
+        select: { allowedUserId: true },
+    });
+
+    if (!project) throw new ApiError(404, "Project not found");
+
+    const allowedUsers = project.allowedUserId || [];
+
+    if (canDeploy) {
+        if (!allowedUsers.includes(userId)) {
+            await prisma.projects.update({
+                where: { id: user.projectId },
+                data: {
+                    allowedUserId: {
+                        push: userId,
+                    },
+                },
+            });
+
+            return;
+        }
+    }
+
+    const updatedList = allowedUsers.filter((id) => id !== userId);
+
+    await prisma.projects.update({
+        where: { id: user.projectId },
+        data: { allowedUserId: updatedList },
+    });
+};
+
+module.exports = { signup, login, getUsers, permissionsUpdate };

@@ -1,6 +1,7 @@
 const adminService = require("../services/admin.service");
 const adminLoginSchema = require("../validators/admin/adminLogin.validator");
 const adminSignupSchema = require("../validators/admin/adminSignup.validator");
+const permissionsUpdateSchema = require("../validators/admin/permissionsUpdate.validator");
 
 const signup = async (req, res, next) => {
     try {
@@ -24,5 +25,36 @@ const login = async (req, res, next) => {
     }
 };
 
+const getUsers = async (req, res, next) => {
+    try {
+        const data = { id: req.user.id };
+        const result = await adminService.getUsers(data); // projectUsers[]
 
-module.exports = { signup, login };
+        res.status(200).json({ message: "Users fetch successful", projectUsers: result });
+    } catch (err) {
+        next(err);
+    }
+};
+
+const permissionsUpdate = async (req, res, next) => {
+    try {
+        const parsedBody = permissionsUpdateSchema.parse(req.body);
+        const userId = req.params.userId;
+
+        const data = {
+            userId,
+            adminId: req.user.id,
+            canDeploy: parsedBody.canDeploy,
+        };
+
+        await adminService.permissionsUpdate(data);
+
+        res.status(200).json({
+            message: "Permission change successful",
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+module.exports = { signup, login, getUsers, permissionsUpdate };
