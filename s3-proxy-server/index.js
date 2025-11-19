@@ -4,10 +4,10 @@ const path = require("path");
 require("dotenv").config();
 
 const app = express();
-const PORT = process.env.PORT;
+const proxy = httpProxy.createProxy();
 
 const BASE_PATH = process.env.AWS_S3_BASE_URL;
-const proxy = httpProxy.createProxy();
+const PORT = process.env.PORT;
 
 app.use((req, res) => {
     const hostname = req.hostname;
@@ -21,19 +21,28 @@ app.use((req, res) => {
 });
 
 proxy.on("proxyReq", (proxyReq, req, res) => {
-    const url = req.url;
-
-    if (url === "/") proxyReq.path += "index.html";
+    if (req.url === "/") proxyReq.path += "index.html";
 });
 
 proxy.on("proxyRes", (proxyRes, req, res) => {
     if (proxyRes.statusCode === 403) {
         res.writeHead(200, { "Content-Type": "text/html" });
-        return res.end(require("fs").readFileSync(path.join(__dirname, "public", "custom-index.html"), "utf-8"));
+        return res.end(
+            require("fs").readFileSync(path.join(__dirname, "public", "custom-index.html"), "utf-8")
+        );
     }
 });
 
-app.listen(PORT, () => console.log(`Reverse Proxy Running..${PORT}`));
+
+module.exports = app;
+
+if (require.main === module) {
+    app.listen(PORT, () => console.log(`Reverse Proxy Running on ${PORT}`));
+}
+
+
+
+
 
 
 

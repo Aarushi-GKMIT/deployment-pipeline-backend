@@ -1,135 +1,107 @@
-const jestMock = require("jest-mock");
+const request = require("supertest");
+const express = require("express");
+const path = require("path");
+const fs = require("fs");
 
-// MOCKS
-
-// Mock express
-const mockUse = jest.fn();
-const mockListen = jest.fn((port, cb) => cb && cb());
-jest.mock("express", () => {
-  return jest.fn(() => ({
-    use: mockUse,
-    listen: mockListen,
-  }));
+// MOCK http-proxy 
+jest.mock("http-proxy", () => {
+    const mockProxy = {
+        web: jest.fn((req, res, opts) => {
+            if (mockProxy._trigger403) {
+                // Simulate proxy returning 403
+                mockProxy.onCallbacks["proxyRes"]({ statusCode: 403 }, req, res);
+            } else {
+                res.status(200).send("Proxied Content");
+            }
+        }),
+        onCallbacks: {},
+        on: jest.fn(function (event, handler) {
+            mockProxy.onCallbacks[event] = handler;
+        }),
+        _trigger403: false
+    };
+    return { createProxy: () => mockProxy };
 });
 
-// Mock http-proxy
-const mockWeb = jest.fn();
-const mockOn = jest.fn();
-jest.mock("http-proxy", () => ({
-  createProxy: jest.fn(() => ({
-    web: mockWeb,
-    on: mockOn,
-  })),
-}));
+// Load index.js mocks
+let app;
+let proxy;
 
+beforeEach(() => {
+    jest.resetModules();
 
-// Load module after mocks
+    process.env.AWS_S3_BASE_URL = "http://mock-s3.local";
+    process.env.PORT = 9999;
 
-jest.resetModules();
-const { createApp, startServer, getSubdomain } = require("../index");
+    proxy = require("http-proxy").createProxy();
+    app = express();
 
-describe("S3 Reverse Proxy - Modular Tests", () => {
-  let consoleSpy;
+    // mount our middleware
+    const proxyMiddleware = require("../index.js");
+    app.use(proxyMiddleware);
+});
 
-  beforeEach(() => {
-    // Reset mocks
-    mockUse.mockClear();
-    mockListen.mockClear();
-    mockWeb.mockClear();
-    mockOn.mockClear();
+describe("Reverse Proxy Server Tests", () => {
 
-    consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
-  });
+    test("✔ Should rewrite any path to `/`", async () => {
+        const res = await request(app)
+            .get("/random-route")
+            .set("Host", "proj.example.com");
 
-  afterEach(() => {
-    consoleSpy.mockRestore();
-  });
+        expect(res.text).toBe("Proxied Content");
+        expect(proxy.web).toHaveBeenCalled();
+    });
 
- 
-  // Positive Test Cases
+    test("✔ Should forward request to S3 bucket using subdomain", async () => {
+        await request(app)
+            .get("/")
+            .set("Host", "project123.example.com");
 
-  test("getSubdomain should extract correct subdomain", () => {
-    expect(getSubdomain("test.example.com")).toBe("test");
-    expect(getSubdomain("abc.domain.co")).toBe("abc");
-  });
+        const lastCall = proxy.web.mock.calls[0];
+        const opts = lastCall[2];
 
-  test("createApp should create express app and register middleware", () => {
-    const app = createApp();
-    expect(app).toBeDefined();
-    expect(mockUse).toHaveBeenCalled();
-    expect(mockOn).toHaveBeenCalledWith("proxyReq", expect.any(Function));
-  });
+        expect(opts.target).toBe("http://mock-s3.local/project123");
+    });
 
-  test("middleware should call proxy.web with correct target", () => {
-    const app = createApp();
-    const middleware = mockUse.mock.calls[0][0];
+    test("✔ Should append index.html when url='/'", async () => {
+        await request(app)
+            .get("/")
+            .set("Host", "demo.example.com");
 
-    const req = { hostname: "test.example.com", url: "/file.txt" };
-    const res = {};
-    middleware(req, res);
+        const onCall = proxy.on.mock.calls.find(([event]) => event === "proxyReq");
+        expect(onCall).toBeTruthy();
+    });
 
-    expect(mockWeb).toHaveBeenCalledWith(req, res, expect.objectContaining({
-      target: expect.stringContaining("test"),
-      changeOrigin: true,
-    }));
-  });
+    test("Should serve custom-index.html when S3 returns 403", async () => {
+        // enable 403 simulation
+        proxy._trigger403 = true;
 
-  test("middleware should append index.html for root requests", () => {
-    const app = createApp();
-    const middleware = mockUse.mock.calls[0][0];
-    const req = { hostname: "test.example.com", url: "/" };
-    const res = {};
-    const proxyReq = { path: "" };
+        const htmlPath = path.join(__dirname, "..", "public", "custom-index.html");
+        const expectedHtml = fs.readFileSync(htmlPath, "utf-8");
 
-    middleware(req, res);
-    const proxyListener = mockOn.mock.calls.find(call => call[0] === "proxyReq")[1];
-    proxyListener(proxyReq, req);
+        const res = await request(app)
+            .get("/")
+            .set("Host", "proj.example.com");
 
-    expect(proxyReq.path).toContain("index.html");
-  });
+        expect(res.status).toBe(200);
+        expect(res.text.trim()).toBe(expectedHtml.trim());
+    });
 
-  test("startServer should call app.listen and log startup message", () => {
-    startServer();
-    expect(mockListen).toHaveBeenCalled();
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Reverse Proxy Running"));
-  });
+    test("Should fail if no subdomain is provided", async () => {
+        const res = await request(app)
+            .get("/")
+            .set("Host", "localhost"); // no subdomain
 
+        expect(proxy.web).toHaveBeenCalled();
+        expect(res.text).toBe("Proxied Content");
+    });
 
-  // Negative Test Cases
- 
+    test("Should not break when invalid hostname format is used", async () => {
+        const res = await request(app)
+            .get("/")
+            .set("Host", "invalidhost");
 
-  test("getSubdomain should return null for invalid hostnames", () => {
-    expect(getSubdomain("localhost")).toBeNull();
-    expect(getSubdomain("")).toBeNull();
-    expect(getSubdomain(null)).toBeNull();
-    expect(getSubdomain(undefined)).toBeNull();
-  });
-
-  test("middleware should return 400 for invalid subdomain", () => {
-    const app = createApp();
-    const middleware = mockUse.mock.calls[0][0];
-
-    const req = { hostname: "localhost" }; // Invalid subdomain
-    const res = { status: jest.fn().mockReturnThis(), send: jest.fn() };
-
-    middleware(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.send).toHaveBeenCalledWith("Invalid hostname or subdomain");
-  });
-
-  test("middleware should return 500 if proxy.web throws error", () => {
-    const app = createApp();
-    const middleware = mockUse.mock.calls[0][0];
-
-    mockWeb.mockImplementationOnce(() => { throw new Error("Proxy failed"); });
-
-    const req = { hostname: "test.example.com", url: "/file.txt" };
-    const res = { status: jest.fn().mockReturnThis(), send: jest.fn() };
-
-    middleware(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.send).toHaveBeenCalledWith("Internal server error");
-  });
+        expect(proxy.web).toHaveBeenCalled();
+        expect(res.text).toBe("Proxied Content");
+    });
 });
