@@ -1,0 +1,17 @@
+enum RoleName {
+  ADMIN
+  USER
+}
+
+model Roles {
+  id          String       @id @default(uuid())
+  roleName    RoleName     @unique
+
+  users       Users[]
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+
+  @@index([roleName])
+}
