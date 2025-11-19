@@ -27,7 +27,6 @@ const createDeployment = async (data) => {
         { name: "GIT_REPOSITORY_URL", value: project.gitUrl },
         { name: "PROJECT_ID", value: String(projectId) },
         { name: "DEPLOYMENT_ID", value: String(deployment.id) },
-        { name: "REDIS_URL", value: process.env.REDIS_URL },
         { name: "AWS_REGION", value: process.env.AWS_REGION },
         { name: "S3_BUCKET", value: process.env.S3_BUCKET },
         { name: "AWS_ACCESS_KEY_ID", value: process.env.AWS_ACCESS_KEY_ID },
