@@ -19,6 +19,7 @@
   "type": "commonjs",
   "dependencies": {
     "@aws-sdk/client-ecs": "^3.931.0",
+    "@aws-sdk/client-route-53": "^3.936.0",
     "@prisma/client": "^6.19.0",
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",

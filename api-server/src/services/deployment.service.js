@@ -2,13 +2,16 @@ const { RunTaskCommand } = require("@aws-sdk/client-ecs");
 const prisma = require("../config/prisma");
 const { ecsClient, ecsConfig } = require("../config/ecs");
 const ApiError = require("../utils/apiError");
+const createRouteRecord = require("../utils/createRouteRecord");
 
 const createDeployment = async (data) => {
+
     const { userId, projectId } = data;
 
     const project = await prisma.projects.findUnique({
         where: { id: projectId },
     });
+
 
     if (!project) throw new ApiError(404, "Project not found");
     if (!project.allowedUserId.includes(userId)) throw new ApiError(403, "You are not allowed to deploy this project");
@@ -61,7 +64,13 @@ const createDeployment = async (data) => {
         throw new ApiError(500, "Failed to start ECS deployment task: " + err.message);
     }
 
-    const deploymentUrl = `http://${project.id}.${process.env.S3_URL}`;
+    try {
+        await createRouteRecord(projectId);
+    } catch (err) {
+        throw new ApiError(500, "Failed to create Route53 record: " + err.message);
+    }
+
+    const deploymentUrl = `http://${project.id}.${process.env.ROUTE53_DOMAIN_NAME}:${process.env.ROUTE53_S3_PROXY_PORT}`;
 
     return { deploymentUrl };
 };
