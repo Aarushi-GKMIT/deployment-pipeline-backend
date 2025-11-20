@@ -4,6 +4,8 @@ const cors = require("cors");
 
 const authRoutes = require("./routes/auth.routes");
 const adminRoutes = require("./routes/admin.routes");
+const projectRoutes = require("./routes/project.routes");
+const deploymentRoutes = require("./routes/deployment.routes");
 const errorHandler = require("./middlewares/errorHandler.middleware");
 
 const app = express();
@@ -14,6 +16,8 @@ app.use(cors());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/project", projectRoutes);
+app.use("/api/deployment", deploymentRoutes);
 
 app.use(errorHandler);
 
