@@ -21,13 +21,10 @@ jobs:
                 aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
                 aws-region: ap-south-1
 
-            - name: Login to Amazon ECR
-              id: login-ecr
-              uses: aws-actions/amazon-ecr-login@v2
-
             - name: Build Docker image
               run: |
                 cd build-server
+                npm install
                 echo AWS_REGION=ap-south-1 >> .env
                 echo AWS_ACCOUNT_ID=022005599044 >> .env
                 echo ECR_REPO_NAME=builder-server >> .env
