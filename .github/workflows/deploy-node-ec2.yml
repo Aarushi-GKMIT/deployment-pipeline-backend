@@ -29,7 +29,7 @@ jobs:
                 echo AWS_ACCOUNT_ID=022005599044 >> .env
                 echo ECR_REPO_NAME=builder-server >> .env
                 npm run login
-                npm run build
+                npm run docker-build
                 npm run tag
                 npm run push
                
