@@ -9,7 +9,7 @@
   "scripts": {
     "test": "jest",
     "login": "node ./utils/ecr.js login",
-    "build": "node ./utils/ecr.js build",
+    "docker-build": "node ./utils/ecr.js build",
     "tag": "node ./utils/ecr.js tag",
     "push": "node ./utils/ecr.js push"
   },
