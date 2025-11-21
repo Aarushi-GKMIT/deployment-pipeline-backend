@@ -29,8 +29,8 @@ jobs:
               run: |
                 cd build-server
                 echo AWS_REGION=ap-south-1 >> .env
-                echo AWS_ACCOUNT_ID={{ secrets.AWS_ACCOUNT_ID }} >> .env
-                echo ECR_REPO_NAME={{ secrets.ECR_REPO }} >> .env
+                echo AWS_ACCOUNT_ID=022005599044 >> .env
+                echo ECR_REPO_NAME=builder-server >> .env
                 npm run login
                 npm run build
                 npm run tag
