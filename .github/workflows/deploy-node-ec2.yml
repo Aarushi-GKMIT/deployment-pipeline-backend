@@ -1,81 +1,38 @@
-name: Deploy Node Servers to EC2
+name: Build on PR
 
 on:
-  push:
-    branches: ["dev"]
-  workflow-dispach:
+    workflow_dispatch:
+    push:
+        branches:
+            - feature/project-routes
+            - feature/ci-cd
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    environment: production
+    build:
+        runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+        steps:
+            - uses: actions/checkout@v5
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
+            - name: Configure AWS Credentials
+              uses: aws-actions/configure-aws-credentials@v3
+              with:
+                aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                aws-region: ap-south-1
 
-      # Build only the servers we want to deploy
+            - name: Login to Amazon ECR
+              id: login-ecr
+              uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Install & Build API Server
-        working-directory: ./api-server
-        run: |
-          npm ci
-          npm run build || echo "no build step for api-server"
-
-      - name: Install & Build S3 Reverse Proxy
-        working-directory: ./s3-reverse-proxy
-        run: |
-          npm ci
-          npm run build || echo "no build step for s3-reverse-proxy"
-
-      # Prepare SSH key
-
-      - name: Save SSH private key
-        run: |
-          echo "${{ secrets.EC2_KEY }}" > private_key.pem
-          chmod 600 private_key.pem
-
-      # Sync code to EC2
-
-      - name: Upload API Server to EC2
-        run: |
-          rsync -avz --delete -e "ssh -i private_key.pem -o StrictHostKeyChecking=no" \
-            ./api-server/ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.API_PATH }}
-
-      - name: Upload S3 Reverse Proxy to EC2
-        run: |
-          rsync -avz --delete -e "ssh -i private_key.pem -o StrictHostKeyChecking=no" \
-            ./s3-reverse-proxy/ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.S3PROXY_PATH }}
-
-      # Install on EC2 and restart via PM2
-
-      - name: Install deps & restart services on EC2
-        run: |
-          ssh -i private_key.pem -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-            set -e
-
-            # API server
-            cd ${{ secrets.API_PATH }}
-            npm install --production || true
-            if [ -f ecosystem.config.js ]; then
-              pm2 restart ecosystem.config.js --only api-server || pm2 start ecosystem.config.js --only api-server
-            else
-              pm2 restart api-server || pm2 start index.js --name api-server
-            fi
-
-            # S3 proxy server
-            cd ${{ secrets.S3PROXY_PATH }}
-            npm install --production || true
-            if [ -f ecosystem.config.js ]; then
-              pm2 restart ecosystem.config.js --only s3-proxy || pm2 start ecosystem.config.js --only s3-proxy
-            else
-              pm2 restart s3-proxy || pm2 start index.js --name s3-proxy
-            fi
-
-            pm2 save
-          EOF
+            - name: Build Docker image
+              run: |
+                cd build-server
+                echo AWS_REGION=ap-south-1 >> .env
+                echo AWS_ACCOUNT_ID={{ secrets.AWS_ACCOUNT_ID }} >> .env
+                echo ECR_REPO_NAME={{ secrets.ECR_REPO }} >> .env
+                npm run login
+                npm run build
+                npm run tag
+                npm run push
+               
