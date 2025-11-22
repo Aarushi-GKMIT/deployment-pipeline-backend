@@ -1,0 +1,49 @@
+name: CD Pipeline - Node Backend
+
+on:
+    workflow_dispatch:
+    push:
+        branches:
+            - feature/project-routes
+            - feature/ci-cd
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # 1. Setup SSH
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key.pem
+          chmod 600 ~/.ssh/ec2_key.pem
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      # 2. Deploy to EC2
+      - name: Deploy to EC2
+        run: |
+          ssh -i ~/.ssh/ec2_key.pem ubuntu@${{ secrets.EC2_HOST }} "
+            cd /home/ubuntu/deployment-pipeline-backend && \
+
+            echo 'Pulling latest code' && \
+            git pull origin feature/route53 && \
+
+            echo 'Installing dependencies for api-server' && \
+            cd api-server && npm install && \
+
+            echo 'Installing dependencies for s3-proxy-server' && \
+            cd .. && cd s3-proxy-server && npm install && \
+
+            echo 'Restarting PM2' && \
+            cd .. && pm2 delete all && \
+
+            cd api-server && \
+            pm2 start npm --name api-server -- run start && \
+
+            cd .. && cd s3-proxy-server && \
+            pm2 start npm --name s3-proxy-server -- run start && \
+
+            pm2 save
+          "
