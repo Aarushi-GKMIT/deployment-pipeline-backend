@@ -1,0 +1,51 @@
+name: Build on PR
+
+on:
+    workflow_dispatch:
+    push:
+        branches:
+            - feature/project-routes
+            - feature/ci-cd
+            
+jobs:
+    build:
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v3
+
+            - name: Use Node.js
+              uses: actions/setup-node@v3
+              with:
+                  node-version: "20"
+
+            # API Server
+            - name: Install Dependencies for API-Server
+              run: npm install
+              working-directory: api-server
+
+            - name: Generate Prisma Client for API-Server
+              run: npx prisma generate
+              working-directory: api-server
+
+            - name: Run Tests for API-Server
+              run: npm test
+              working-directory: api-server
+
+            # S3 Proxy
+            - name: Install Dependencies for S3-Proxy
+              run: npm install
+              working-directory: s3-proxy-server
+
+            - name: Run Tests for S3-Proxy
+              run: npm test
+              working-directory: s3-proxy-server
+
+            # Build Server
+            - name: Install Dependencies for Build Server
+              run: npm install
+              working-directory: build-server
+
+            - name: Run Tests for Build-Server
+              run: npm test
+              working-directory: build-server
