@@ -5,7 +5,7 @@ on:
     push:
         branches:
             - feature/project-routes
-            - feature/ci-cd
+            - feature/ci-cd   
 
 jobs:
   deploy:
